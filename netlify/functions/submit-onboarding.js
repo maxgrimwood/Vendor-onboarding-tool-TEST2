@@ -1,38 +1,45 @@
-const { PDFDocument } = require('pdf-lib');
-const { Resend } = require('resend');
-const resend = new Resend(process.env.RESEND_API_KEY);
+const handleSubmit = async (e) => {
+    e.preventDefault();
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    setIsSubmitting(true);
 
-exports.handler = async (event) => {
-    if (event.httpMethod !== 'POST') return { statusCode: 405, body: 'Method Not Allowed' };
+    const isUS = formData.country === 'United States';
+
+    // Basic validation
+    if (!formData.companyName || !formData.address || !formData.zipCity || !formData.country || 
+        !formData.phone || !formData.email || !formData.signatoryName || !signaturePreview) {
+        setErrorMessage("Please complete all required fields and provide a signature.");
+        setIsSubmitting(false);
+        return;
+    }
+
+    if (!gdprConsent) {
+        setErrorMessage("You must agree to the GDPR data consent to submit.");
+        setIsSubmitting(false);
+        return;
+    }
 
     try {
-        const { formData, signatureBase64 } = JSON.parse(event.body);
-
-        const pdfDoc = await PDFDocument.create();
-        const page = pdfDoc.addPage([600, 800]);
-        page.drawText(`Company: ${formData.companyName}`, { x: 50, y: 750, size: 12 });
-        
-        if (signatureBase64) {
-            const signatureImage = await pdfDoc.embedPng(signatureBase64);
-            page.drawImage(signatureImage, { x: 50, y: 650, width: 150, height: 50 });
-        }
-        
-        const pdfBytes = await pdfDoc.save();
-        const pdfBuffer = Buffer.from(pdfBytes).toString('base64');
-
-        await resend.emails.send({
-            from: 'onboarding@resend.dev',
-            to: ['max.grimwood@robinradar.com'], 
-            subject: `New Vendor Onboarding: ${formData.companyName}`,
-            text: 'Please find the signed vendor agreement attached.',
-            attachments: [{
-                filename: `${formData.companyName.replace(/\s+/g, '_')}_Agreement.pdf`,
-                content: pdfBuffer,
-            }]
+        const response = await fetch('/.netlify/functions/submit-onboarding', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                formData,
+                signatureBase64: signaturePreview
+            })
         });
 
-        return { statusCode: 200, body: JSON.stringify({ message: "Success" }) };
-    } catch (error) {
-        return { statusCode: 500, body: JSON.stringify({ error: error.message }) };
+        const result = await response.json();
+
+        if (response.ok) {
+            setSuccessMessage("Onboarding form submitted successfully! A copy has been delivered to Finance.");
+        } else {
+            setErrorMessage(`Submission error: ${result.error || 'Server error'}`);
+        }
+    } catch (err) {
+        setErrorMessage("Network error: Could not reach the server function.");
+    } finally {
+        setIsSubmitting(false);
     }
 };
