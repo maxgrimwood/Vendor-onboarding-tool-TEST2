@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Robin Radar Systems - Supplier Onboarding</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+    <style>
+        /* Small touch-action fix to prevent scrolling while signing on mobile */
+        canvas { touch-action: none; }
+    </style>
+</head>
+<body class="bg-[#0e1117] text-white font-sans antialiased">
+    
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useRef, useEffect } = React;
+
+        const countriesList = [
+            "Afghanistan", "Albania", "Algeria", "Andorra", "Angola", "Antigua and Barbuda", "Argentina", "Armenia", "Australia", "Austria", "Azerbaijan", "Bahamas", "Bahrain", "Bangladesh", "Barbados", "Belarus", "Belgium", "Belize", "Benin", "Bhutan", "Bolivia", "Bosnia and Herzegovina", "Botswana", "Brazil", "Brunei", "Bulgaria", "Burkina Faso", "Burundi", "Cabo Verde", "Cambodia", "Cameroon", "Canada", "Central African Republic", "Chad", "Chile", "China", "Colombia", "Comoros", "Congo", "Costa Rica", "Croatia", "Cuba", "Cyprus", "Czech Republic", "Denmark", "Djibouti", "Dominica", "Dominican Republic", "Ecuador", "Egypt", "El Salvador", "Equatorial Guinea", "Eritrea", "Estonia", "Eswatini", "Ethiopia", "Fiji", "Finland", "France", "Gabon", "Gambia", "Georgia", "Germany", "Ghana", "Greece", "Grenada", "Guatemala", "Guinea", "Guinea-Bissau", "Guyana", "Haiti", "Honduras", "Hungary", "Iceland", "India", "Indonesia", "Iran", "Iraq", "Ireland", "Israel", "Italy", "Jamaica", "Japan", "Jordan", "Kazakhstan", "Kenya", "Kiribati", "Kuwait", "Kyrgyzstan", "Laos", "Latvia", "Lebanon", "Lesotho", "Liberia", "Libya", "Liechtenstein", "Lithuania", "Luxembourg", "Madagascar", "Malawi", "Malaysia", "Maldives", "Mali", "Malta", "Marshall Islands", "Mauritania", "Mauritius", "Mexico", "Micronesia", "Moldova", "Monaco", "Mongolia", "Montenegro", "Morocco", "Mozambique", "Myanmar", "Namibia", "Nauru", "Nepal", "Netherlands", "New Zealand", "Nicaragua", "Niger", "Nigeria", "North Korea", "North Macedonia", "Norway", "Oman", "Pakistan", "Palau", "Palestine", "Panama", "Papua New Guinea", "Paraguay", "Peru", "Philippines", "Poland", "Portugal", "Qatar", "Romania", "Russia", "Rwanda", "Saint Kitts and Nevis", "Saint Lucia", "Saint Vincent and the Grenadines", "Samoa", "San Marino", "Sao Tome and Principe", "Saudi Arabia", "Senegal", "Serbia", "Seychelles", "Sierra Leone", "Singapore", "Slovakia", "Slovenia", "Solomon Islands", "Somalia", "South Africa", "South Korea", "South Sudan", "Spain", "Sri Lanka", "Sudan", "Suriname", "Sweden", "Switzerland", "Syria", "Taiwan", "Tajikistan", "Tanzania", "Thailand", "Timor-Leste", "Togo", "Tonga", "Trinidad and Tobago", "Tunisia", "Turkey", "Turkmenistan", "Tuvalu", "Uganda", "Ukraine", "United Arab Emirates", "United Kingdom", "United States", "Uruguay", "Uzbekistan", "Vanuatu", "Vatican City", "Venezuela", "Vietnam", "Yemen", "Zambia", "Zimbabwe"
+        ];
+
+        function App() {
+            const [formData, setFormData] = useState({
+                companyName: '',
+                address: '',
+                zipCity: '',
+                country: 'Netherlands',
+                phone: '',
+                email: '',
+                website: '',
+                vatNumber: '',
+                kvkNumber: '',
+                iban: '',
+                bic: '',
+                swift: '',
+                paymentTerms: '30 days standard',
+                signatoryName: '',
+                tinFein: '',
+                usBankName: '',
+                usBankAddress: '',
+                achRouting: '',
+                accountNumber: '',
+                usBic: '',
+                fwAba: '',
+            });
+            const [signaturePreview, setSignaturePreview] = useState(null);
+            const [isSubmitting, setIsSubmitting] = useState(false);
+            const [validationMessage, setValidationMessage] = useState(null);
+            const [errorMessage, setErrorMessage] = useState(null);
+            const [successMessage, setSuccessMessage] = useState(null);
+
+            const [ibanError, setIbanError] = useState("");
+            const [vatError, setVatError] = useState("");
+            const [websiteError, setWebsiteError] = useState("");
+            
+            const [isIbanValid, setIsIbanValid] = useState(false);
+            const [isVatValid, setIsVatValid] = useState(false);
+            const [isWebsiteValid, setIsWebsiteValid] = useState(false);
+            
+            const [isCheckingIban, setIsCheckingIban] = useState(false);
+
+            const canvasRef = useRef(null);
+            const countryRef = useRef(null);
+            const signatureFileRef = useRef(null);
+            const [isDrawing, setIsDrawing] = useState(false);
+            const [showCountryDropdown, setShowCountryDropdown] = useState(false);
+
+            const [supportingDocs, setSupportingDocs] = useState([]);
+            const [w9Form, setW9Form] = useState(null);
+            const [gdprConsent, setGdprConsent] = useState(false);
+            const [captchaStatus, setCaptchaStatus] = useState('idle'); // idle, loading, success
+            const [showEmailModal, setShowEmailModal] = useState(false);
+
+            useEffect(() => {
+                const handleClickOutside = (event) => {
+                    if (countryRef.current && !countryRef.current.contains(event.target)) {
+                        setShowCountryDropdown(false);
+                    }
+                };
+                document.addEventListener("mousedown", handleClickOutside);
+                return () => document.removeEventListener("mousedown", handleClickOutside);
+            }, []);
+
+            // Validate IBAN using safe piece-wise Modulo-97 mathematics
+            const validateIBAN = (input) => {
+                const iban = input.toUpperCase().replace(/[^A-Z0-9]/g, '');
+                if (!iban) return true;
+                if (!/^([A-Z]{2}[0-9]{2})([A-Z0-9]{11,30})$/.test(iban)) return false;
+                const moved = iban.substring(4) + iban.substring(0, 4);
+                const converted = moved.split('').map(c => {
+                    const code = c.charCodeAt(0);
+                    return code >= 65 && code <= 90 ? code - 55 : c;
+                }).join('');
+                
+                let remainder = converted.slice(0, 2);
+                for (let offset = 2; offset < converted.length; offset += 7) {
+                    let fragment = String(remainder) + converted.substring(offset, offset + 7);
+                    remainder = parseInt(fragment, 10) % 97;
+                }
+                return remainder === 1;
+            };
+
+            const validateVAT = (input) => {
+                const vat = input.toUpperCase().replace(/[^A-Z0-9]/g, '');
+                if (!vat) return true;
+                return /^[A-Z]{2}[A-Z0-9]{2,12}$/.test(vat);
+            };
+
+            const validateURL = (url) => {
+                if (!url) return true;
+                return /^((https?:\/\/)?([\w\d\-]+\.)+\w{2,}(\/.*)?)$/i.test(url);
+            };
+
+            const handleBlur = async (e) => {
+                const { name, value } = e.target;
+                if (name === 'iban') {
+                    if (!value) {
+                        setIbanError("");
+                        setIsIbanValid(false);
+                        return;
+                    }
+                    
+                    setIsCheckingIban(true);
+                    try {
+                        const apiKey = "YOUR_API_KEY"; // Replace with your active iban.com API Key if you have one
+                        const response = await fetch(`https://api.iban.com/clients/api/v4/iban/?api_key=${apiKey}&format=json&iban=${value}`);
+                        
+                        if (!response.ok) throw new Error("API request failed or missing key");
+                        
+                        const data = await response.json();
+                        
+                        if (data.validations && data.validations.iban && data.validations.iban.code === "001") {
+                            setIsIbanValid(true);
+                            setIbanError("");
+                        } else {
+                            setIsIbanValid(false);
+                            setIbanError(data.errors ? data.errors[0].message : "Invalid IBAN according to iban.com.");
+                        }
+                    } catch (error) {
+                        console.warn("iban.com API unavailable (missing key/CORS). Falling back to local Modulo-97 validation.");
+                        const isValid = validateIBAN(value);
+                        setIbanError(isValid ? "" : "Invalid IBAN format.");
+                        setIsIbanValid(!!isValid);
+                    } finally {
+                        setIsCheckingIban(false);
+                    }
+                } else if (name === 'vatNumber') {
+                    const isValid = value && validateVAT(value);
+                    setVatError(value && !isValid ? "Invalid EU VAT format." : "");
+                    setIsVatValid(!!isValid);
+                } else if (name === 'website') {
+                    const isValid = value && validateURL(value);
+                    setWebsiteError(value && !isValid ? "Invalid URL format." : "");
+                    setIsWebsiteValid(!!isValid);
+                }
+            };
+
+            const getCoordinates = (e) => {
+                if (!canvasRef.current) return;
+                const canvas = canvasRef.current;
+                const rect = canvas.getBoundingClientRect();
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                return { x: clientX - rect.left, y: clientY - rect.top };
+            };
+
+            const startDrawing = (e) => {
+                e.preventDefault();
+                const coords = getCoordinates(e);
+                if (!coords) return;
+                setIsDrawing(true);
+                const ctx = canvasRef.current.getContext('2d');
+                ctx.beginPath();
+                ctx.moveTo(coords.x, coords.y);
+            };
+
+            const draw = (e) => {
+                e.preventDefault();
+                if (!isDrawing) return;
+                const coords = getCoordinates(e);
+                if (!coords) return;
+                const ctx = canvasRef.current.getContext('2d');
+                ctx.lineTo(coords.x, coords.y);
+                ctx.strokeStyle = '#0f172a';
+                ctx.lineWidth = 3;
+                ctx.lineCap = "round";
+                ctx.stroke();
+            };
+
+            const stopDrawing = () => {
+                if (isDrawing) {
+                    setIsDrawing(false);
+                    setSignaturePreview(canvasRef.current.toDataURL('image/png'));
+                }
+            };
+
+            const clearSignature = () => {
+                const canvas = canvasRef.current;
+                const ctx = canvas.getContext('2d');
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                setSignaturePreview(null);
+                if (signatureFileRef.current) {
+                    signatureFileRef.current.value = "";
+                }
+            };
+
+            const handleSignatureUpload = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = canvasRef.current;
+                        const ctx = canvas.getContext('2d');
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        
+                        // Scale image to fit proportionally within canvas dimensions
+                        const scale = Math.min(canvas.width / img.width, canvas.height / img.height);
+                        const x = (canvas.width / 2) - (img.width / 2) * scale;
+                        const y = (canvas.height / 2) - (img.height / 2) * scale;
+                        
+                        ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
+                        setSignaturePreview(canvas.toDataURL('image/png'));
+                    };
+                    img.src = event.target.result;
+                };
+                reader.readAsDataURL(file);
+            };
+
+            const handleCaptchaClick = () => {
+                if (captchaStatus === 'success') return;
+                setCaptchaStatus('loading');
+                setTimeout(() => setCaptchaStatus('success'), 1200);
+            };
+
+            const handleInputChange = (e) => {
+                const { name, value } = e.target;
+                setFormData((prev) => ({ ...prev, [name]: value }));
+            };
+
+            const validateWithGemini = async () => {
+                const isUS = formData.country === 'United States';
+                let promptDetails = '';
+                
+                if (isUS) {
+                    promptDetails = `Company: ${formData.companyName}, Email: ${formData.email}, TIN/FEIN: ${formData.tinFein}, Bank Name: ${formData.usBankName}, ACH Routing: ${formData.achRouting}, Account Number: ${formData.accountNumber}, FW/ABA: ${formData.fwAba}`;
+                } else {
+                    promptDetails = `Company: ${formData.companyName}, Email: ${formData.email}, VAT: ${formData.vatNumber}, KVK: ${formData.kvkNumber}, IBAN: ${formData.iban}, BIC: ${formData.bic}, SWIFT: ${formData.swift}`;
+                }
+
+                const prompt = `Analyze the following supplier registration details for errors, fraud risks, or invalid formatting:\n${promptDetails}\nReturn a brief evaluation. Flag if any bank or tax details appear malformed or suspicious. Keep it to one short paragraph.`;
+
+                try {
+                    const apiKey = ""; // Left blank intentionally for sandbox
+                    if (!apiKey) return; // Skip if no key
+                    
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+                    const payload = { contents: [{ parts: [{ text: prompt }] }] };
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (response.ok) {
+                        const result = await response.json();
+                        const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                        if (text) setValidationMessage(text);
+                    }
+                } catch (error) {
+                    console.error("Error calling Gemini API", error);
+                }
+            };
+
+            const generatePDF = async () => {
+                try {
+                    const { jsPDF } = window.jspdf;
+                    const doc = new jsPDF();
+                    const pdfFilename = `Supplier_${formData.companyName.replace(/\s+/g, '_')}.pdf`;
+
+                    doc.setFontSize(16);
+                    doc.setFont("helvetica", "bold");
+                    doc.text("ROBIN RADAR SYSTEMS - SUPPLIER FORM", 15, 20);
+                    
+                    doc.setFontSize(10);
+                    doc.setFont("helvetica", "normal");
+                    doc.text("Target Inbox: finance@robinradar.com", 15, 26);
+                    doc.line(15, 30, 195, 30);
+
+                    const isUS = formData.country === 'United States';
+                    let dataFields = [
+                        ["Company Name", formData.companyName],
+                        ["Address", formData.address],
+                        ["Zip Code / City", formData.zipCity],
+                        ["Country", formData.country],
+                        ["Telephone Number", formData.phone],
+                        ["Finance E-mail", formData.email],
+                        ["Website URL", formData.website]
+                    ];
+
+                    if (isUS) {
+                        dataFields = dataFields.concat([
+                            ["Company TIN / FEIN", formData.tinFein],
+                            ["Bank Name", formData.usBankName],
+                            ["Bank Address", formData.usBankAddress],
+                            ["ACH Routing #", formData.achRouting],
+                            ["Account #", formData.accountNumber],
+                            ["Bank BIC", formData.usBic],
+                            ["FW/ABA", formData.fwAba]
+                        ]);
+                    } else {
+                        dataFields = dataFields.concat([
+                            ["VAT Number", formData.vatNumber],
+                            ["KVK Number", formData.kvkNumber],
+                            ["Bank IBAN", formData.iban],
+                            ["Bank BIC", formData.bic],
+                            ["Bank SWIFT", formData.swift]
+                        ]);
+                    }
+                    
+                    dataFields.push(["Payment Terms", formData.paymentTerms]);
+                    dataFields.push(["Authorised Signatory", formData.signatoryName]);
+
+                    let yPos = 40;
+                    doc.setFontSize(10);
+                    dataFields.forEach(([label, value]) => {
+                        doc.setFont("helvetica", "bold");
+                        doc.text(`${label}:`, 15, yPos);
+                        doc.setFont("helvetica", "normal");
+                        doc.text(value || "N/A", 70, yPos);
+                        yPos += 8;
+                    });
+
+                    yPos += 4;
+                    doc.setFont("helvetica", "bold");
+                    doc.text("Attached Documents:", 15, yPos);
+                    doc.setFont("helvetica", "normal");
+                    
+                    let attachedTexts = [];
+                    if (supportingDocs.length > 0) attachedTexts.push(...supportingDocs.map(f => f.name));
+                    if (w9Form) attachedTexts.push(`W-9 Form: ${w9Form.name}`);
+                    if (attachedTexts.length === 0) attachedTexts.push("None provided.");
+                    
+                    attachedTexts.forEach(text => {
+                        yPos += 6;
+                        doc.text(`- ${text}`, 20, yPos);
+                    });
+
+                    // Signature & Timestamp
+                    yPos += 12;
+                    if (signaturePreview) {
+                        doc.setFont("helvetica", "bold");
+                        doc.text("Signature:", 15, yPos + 10);
+                        try {
+                            const format = signaturePreview.substring("data:image/".length, signaturePreview.indexOf(";base64"));
+                            doc.addImage(signaturePreview, format.toUpperCase(), 70, yPos, 50, 20);
+                            
+                            // ADDED: Official Timestamp for Audit Trail
+                            const timestamp = new Date().toLocaleString();
+                            doc.setFontSize(8);
+                            doc.setFont("helvetica", "italic");
+                            doc.text(`Digitally signed on: ${timestamp}`, 70, yPos + 24);
+                        } catch (e) {
+                            doc.setFont("helvetica", "italic");
+                            doc.text("[Signature Image Attached]", 70, yPos + 10);
+                        }
+                    }
+
+                    doc.save(pdfFilename);
+                } catch (error) {
+                    console.error("Error generating PDF:", error);
+                    setErrorMessage("Failed to generate PDF document. Please try again.");
+                }
+            };
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setErrorMessage(null);
+                setSuccessMessage(null);
+                setValidationMessage(null);
+                setIsSubmitting(true);
+
+                const isUS = formData.country === 'United States';
+
+                if (!formData.companyName || !formData.address || !formData.zipCity || !formData.country || 
+                    !formData.phone || !formData.email || !formData.signatoryName || !signaturePreview) {
+                    setErrorMessage("Please fill in all general required fields marked with * and provide an electronic signature.");
+                    setIsSubmitting(false);
+                    return;
+                }
+
+                if (isUS) {
+                    if (!formData.tinFein || !formData.usBankName || !formData.usBankAddress || !formData.achRouting || !formData.accountNumber || !formData.usBic || !formData.fwAba) {
+                        setErrorMessage("Please fill in all required US Tax and Bank details marked with *.");
+                        setIsSubmitting(false);
+                        return;
+                    }
+                    if (!w9Form) {
+                        setErrorMessage("A completed W-9 Form upload is required for US-based suppliers.");
+                        setIsSubmitting(false);
+                        return;
+                    }
+                } else {
+                    if (!formData.iban || !formData.bic || !formData.swift || !formData.vatNumber || !formData.kvkNumber) {
+                        setErrorMessage("Please fill in all required EU Tax and Bank details marked with *.");
+                        setIsSubmitting(false);
+                        return;
+                    }
+                }
+
+                if (websiteError || (!isUS && (ibanError || vatError))) {
+                    setErrorMessage("Please fix the validation errors before submitting.");
+                    setIsSubmitting(false);
+                    return;
+                }
+
+                if (!gdprConsent) {
+                    setErrorMessage("You must agree to the Data Processing Consent (GDPR) policy to submit.");
+                    setIsSubmitting(false);
+                    return;
+                }
+
+                if (captchaStatus !== 'success') {
+                    setErrorMessage("Please verify that you are not a robot before submitting.");
+                    setIsSubmitting(false);
+                    return;
+                }
+
+                await validateWithGemini();
+                await generatePDF();
+
+                setSuccessMessage("The PDF has been downloaded! Please select your email client below to open a draft.");
+                setShowEmailModal(true);
+                setIsSubmitting(false);
+            };
+
+            const handleEmailChoice = (client) => {
+                const to = "finance@robinradar.com";
+                const subject = encodeURIComponent("Vendor Form Details");
+                
+                const isUS = formData.country === 'United States';
+                let formDetailsText = `Company Name: ${formData.companyName}
+Address: ${formData.address}
+Zip Code / City: ${formData.zipCity}
+Country: ${formData.country}
+Telephone Number: ${formData.phone}
+Finance E-mail: ${formData.email}
+Website URL: ${formData.website || 'N/A'}
+Payment Terms: ${formData.paymentTerms}
+Authorised Signatory: ${formData.signatoryName}`;
+
+                if (isUS) {
+                    formDetailsText += `\n\n-- US Tax & Bank Details --\nTIN / FEIN: ${formData.tinFein}\nBank Name: ${formData.usBankName}\nBank Address: ${formData.usBankAddress}\nACH Routing #: ${formData.achRouting}\nAccount #: ${formData.accountNumber}\nBIC: ${formData.usBic}\nFW/ABA: ${formData.fwAba}`;
+                } else {
+                    formDetailsText += `\n\n-- EU Tax & Bank Details --\nVAT Number: ${formData.vatNumber}\nKVK Number: ${formData.kvkNumber}\nIBAN: ${formData.iban}\nBIC: ${formData.bic}\nSWIFT: ${formData.swift}`;
+                }
+
+                const bodyText = `Hello Finance Team,\n\nPlease find the newly submitted supplier registration details for ${formData.companyName} below.\n\n*** SENDER INSTRUCTIONS ***\nPlease manually attach the following documents to this email before sending:\n1. The "Supplier_${formData.companyName.replace(/\s+/g, '_')}.pdf" file that just downloaded to your computer.\n2. Your Bank Evidence / KvK Extract.\n${formData.country === 'United States' ? '3. Your completed W-9 Form.\n' : ''}\n--- Form Data ---\n${formDetailsText}\n-----------------\n\nBest regards,\n${formData.signatoryName}\n${formData.companyName}`;
+                
+                const body = encodeURIComponent(bodyText);
+
+                if (client === 'gmail') {
+                    window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${to}&su=${subject}&body=${body}`, '_blank');
+                } else if (client === 'outlook') {
+                    window.open(`https://outlook.office.com/mail/deeplink/compose?to=${to}&subject=${subject}&body=${body}`, '_blank');
+                } else {
+                    window.location.href = `mailto:${to}?subject=${subject}&body=${body}`;
+                }
+                setShowEmailModal(false);
+            };
+
+            return (
+                <div className="min-h-screen p-8">
+                    {/* Email Selection Modal */}
+                    {showEmailModal && (
+                        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+                            <div className="bg-[#1a1c23] p-8 rounded-lg border border-gray-700 shadow-2xl max-w-md w-full">
+                                <h3 className="text-2xl font-bold text-white mb-2">Select Email Client</h3>
+                                <p className="text-gray-300 mb-6 text-sm leading-relaxed">Your PDF has been successfully downloaded. Choose your preferred email provider below to open a pre-filled draft. <br/><br/><strong className="text-red-400">Remember to attach the downloaded PDF and your supporting documents before sending!</strong></p>
+                                <div className="space-y-4">
+                                    <button type="button" onClick={() => handleEmailChoice('gmail')} className="w-full bg-white text-gray-900 hover:bg-gray-200 font-bold py-3 rounded flex items-center justify-center gap-3 transition-colors shadow">
+                                        <svg className="w-5 h-5" viewBox="0 0 24 24"><path fill="#ea4335" d="M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.728L12 16.636l-6.545-4.908v9.273H1.636A1.636 1.636 0 0 1 0 19.366V5.457c0-2.023 2.309-3.178 3.927-1.964L12 8.411l8.073-4.918c1.618-1.214 3.927-.059 3.927 1.964Z"/><path fill="#34a853" d="M18.545 21.002h3.819c.904 0 1.636-.732 1.636-1.636V5.457c0-.285-.069-.553-.186-.795l-5.269 3.203v13.137Z"/><path fill="#fbbc05" d="M5.455 21.002H1.636A1.636 1.636 0 0 1 0 19.366V5.457c0-.285.069-.553.186-.795l5.269 3.203v13.137Z"/><path fill="#4285f4" d="M12 16.636L24 7.865v-2.408c0-.756-.412-1.428-1.045-1.782l-10.955 6.66-10.955-6.66C.412 4.029 0 4.701 0 5.457v2.408l12 8.771Z"/></svg>
+                                        Open in Gmail
+                                    </button>
+                                    <button type="button" onClick={() => handleEmailChoice('outlook')} className="w-full bg-[#0078d4] hover:bg-[#005a9e] text-white font-bold py-3 rounded flex items-center justify-center gap-3 transition-colors shadow">
+                                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M22.955 4.545L22.96 19.45c0 1.135-.86 2.05-1.995 2.05H3.04C1.905 21.5 1 20.585 1 19.45V4.545C1 3.41 1.905 2.5 3.04 2.5h17.925c1.135 0 1.99.91 1.99 2.045zM3.86 4.715v14.57h16.28V4.715H3.86zm13.13 4.195l-5.01 3.86-4.995-3.86v-1.61l4.995 3.845 5.01-3.845v1.61z"/></svg>
+                                        Open in Outlook Web
+                                    </button>
+                                    <button type="button" onClick={() => handleEmailChoice('other')} className="w-full bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 rounded flex items-center justify-center gap-3 transition-colors shadow">
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+                                        Default Email App
+                                    </button>
+                                </div>
+                                <button type="button" onClick={() => setShowEmailModal(false)} className="mt-6 text-sm text-gray-400 hover:text-white underline text-center w-full">Cancel</button>
+                            </div>
+                        </div>
+                    )}
+                    <div className="max-w-3xl mx-auto">
+                        <h1 className="text-4xl font-bold mb-2">Robin Radar Systems - Supplier Onboarding</h1>
+                        <p className="text-gray-300 mb-6">Please fill out all fields below to register as a creditor or supplier.</p>
+
+                        {errorMessage && (
+                            <div className="bg-red-900 border border-red-500 text-red-100 p-4 rounded mb-6">
+                                {errorMessage}
+                            </div>
+                        )}
+
+                        {validationMessage && (
+                            <div className="bg-blue-900 border border-blue-500 text-blue-100 p-4 rounded mb-6">
+                                <h3 className="font-bold mb-1">AI Validation Summary:</h3>
+                                <p>{validationMessage}</p>
+                            </div>
+                        )}
+
+                        {successMessage && (
+                            <div className="bg-green-900 border border-green-500 text-green-100 p-4 rounded mb-6">
+                                {successMessage}
+                            </div>
+                        )}
+
+                        <form onSubmit={handleSubmit} className="space-y-8">
+                            
+                            {/* Card 1: Company Information */}
+                            <div className="bg-[#1a1c23] border border-gray-700 p-6 rounded-lg shadow-lg">
+                                <h2 className="text-xl font-semibold border-b border-gray-700 pb-3 mb-5 text-gray-100">1. Company Information</h2>
+                                <div className="space-y-4">
+                                    {[
+                                        { label: "Company Name / Bedrijfsnaam*", name: "companyName", type: "text" },
+                                        { label: "Address / Adres*", name: "address", type: "text" },
+                                        { label: "Zip Code and City / Postcode en Plaats*", name: "zipCity", type: "text" },
+                                    ].map((field) => (
+                                        <div key={field.name} className="flex flex-col">
+                                            <label className="text-sm font-medium mb-1" htmlFor={field.name}>{field.label}</label>
+                                            <input
+                                                type={field.type}
+                                                id={field.name}
+                                                name={field.name}
+                                                value={formData[field.name]}
+                                                onChange={handleInputChange}
+                                                className="w-full bg-[#2b2d35] border border-gray-600 rounded p-2 focus:outline-none focus:border-blue-500 transition-colors"
+                                            />
+                                        </div>
+                                    ))}
+
+                                    <div className="flex flex-col relative" ref={countryRef}>
+                                        <label className="text-sm font-medium mb-1" htmlFor="country">Country / Land*</label>
+                                        <input
+                                            type="text"
+                                            id="country"
+                                            name="country"
+                                            value={formData.country}
+                                            onChange={(e) => {
+                                                handleInputChange(e);
+                                                setShowCountryDropdown(true);
+                                            }}
+                                            onFocus={() => setShowCountryDropdown(true)}
+                                            autoComplete="off"
+                                            placeholder="Type to search..."
+                                            className="w-full bg-[#2b2d35] border border-gray-600 rounded p-2 focus:outline-none focus:border-blue-500 transition-colors"
+                                        />
+                                        {showCountryDropdown && (
+                                            <ul className="absolute z-10 top-full mt-1 left-0 right-0 bg-[#2b2d35] border border-gray-500 rounded max-h-60 overflow-y-auto shadow-xl">
+                                                {countriesList.filter(c => c.toLowerCase().includes(formData.country.toLowerCase())).length > 0 ? (
+                                                    countriesList.filter(c => c.toLowerCase().includes(formData.country.toLowerCase())).map(country => (
+                                                        <li
+                                                            key={country}
+                                                            className="p-3 hover:bg-blue-600 border-b border-gray-700 cursor-pointer text-sm transition-colors last:border-b-0"
+                                                            onMouseDown={(e) => {
+                                                                e.preventDefault();
+                                                                setFormData(prev => ({ ...prev, country: country }));
+                                                                setShowCountryDropdown(false);
+                                                            }}
+                                                        >
+                                                            {country}
+                                                        </li>
+                                                    ))
+                                                ) : (
+                                                    <li className="p-3 text-gray-500 text-sm">No countries found...</li>
+                                                )}
+                                            </ul>
+                                        )}
+                                    </div>
+
+                                    {[
+                                        { label: "Telephone Number / Telefoonnummer*", name: "phone", type: "tel" },
+                                        { label: "Finance E-mail Address / E-mailadres*", name: "email", type: "email" },
+                                        { label: "Website URL", name: "website", type: "text", error: websiteError, valid: isWebsiteValid },
+                                    ].map((field) => (
+                                        <div key={field.name} className="flex flex-col">
+                                            <label className="text-sm font-medium mb-1" htmlFor={field.name}>{field.label}</label>
+                                            <div className="relative">
+                                                <input
+                                                    type={field.type}
+                                                    id={field.name}
+                                                    name={field.name}
+                                                    value={formData[field.name]}
+                                                    onChange={handleInputChange}
+                                                    onBlur={handleBlur}
+                                                    className={`w-full bg-[#2b2d35] border rounded p-2 ${field.valid ? 'pr-10' : ''} focus:outline-none transition-colors ${field.error ? 'border-red-500 focus:border-red-500' : 'border-gray-600 focus:border-blue-500'}`}
+                                                />
+                                                {field.valid && (
+                                                    <svg className="w-5 h-5 text-green-500 absolute right-3 top-[10px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
+                                                )}
+                                            </div>
+                                            {field.error && <span className="text-red-400 text-xs mt-1">{field.error}</span>}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Card 2: Bank & Tax Details */}
+                            <div className="bg-[#1a1c23] border border-gray-700 p-6 rounded-lg shadow-lg">
+                                <h2 className="text-xl font-semibold border-b border-gray-700 pb-3 mb-5 text-gray-100">2. Tax & Bank Details</h2>
+                                <div className="space-y-4">
+                                    {formData.country !== 'United States' ? (
+                                        <>
+                                        {[
+                                            { label: "VAT Number / BTW-nummer (EU only)*", name: "vatNumber", type: "text", error: vatError, valid: isVatValid },
+                                            { label: "Business Registration / KVK-nummer (EU only)*", name: "kvkNumber", type: "text" },
+                                            { label: "IBAN*", name: "iban", type: "text", error: ibanError, valid: isIbanValid },
+                                            { label: "BIC*", name: "bic", type: "text" },
+                                            { label: "SWIFT*", name: "swift", type: "text" },
+                                        ].map((field) => (
+                                            <div key={field.name} className="flex flex-col">
+                                                <label className="text-sm font-medium mb-1" htmlFor={field.name}>{field.label}</label>
+                                                <div className="relative">
+                                                    <input
+                                                        type={field.type}
+                                                        id={field.name}
+                                                        name={field.name}
+                                                        value={formData[field.name]}
+                                                        onChange={handleInputChange}
+                                                        onBlur={handleBlur}
+                                                        className={`w-full bg-[#2b2d35] border rounded p-2 ${field.valid || (field.name === 'iban' && isCheckingIban) ? 'pr-10' : ''} focus:outline-none transition-colors ${field.error ? 'border-red-500 focus:border-red-500' : 'border-gray-600 focus:border-blue-500'}`}
+                                                    />
+                                                    {field.name === 'iban' && isCheckingIban && (
+                                                        <svg className="w-5 h-5 text-blue-500 absolute right-3 top-[10px] animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                                    )}
+                                                    {field.valid && !(field.name === 'iban' && isCheckingIban) && (
+                                                        <svg className="w-5 h-5 text-green-500 absolute right-3 top-[10px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
+                                                    )}
+                                                </div>
+                                                {field.error && <span className="text-red-400 text-xs mt-1">{field.error}</span>}
+                                            </div>
+                                        ))}
+                                        </>
+                                    ) : (
+                                        <>
+                                        {[
+                                            { label: "Company TIN / FEIN (Taxpayer Identification Number)*", name: "tinFein", type: "text", placeholder: "Ex. 37-2142119" },
+                                            { label: "Bank name*", name: "usBankName", type: "text" },
+                                            { label: "Bank Address*", name: "usBankAddress", type: "text" },
+                                            { label: "ACH routing #*", name: "achRouting", type: "text" },
+                                            { label: "Account #*", name: "accountNumber", type: "text" },
+                                            { label: "BIC*", name: "usBic", type: "text" },
+                                            { label: "FW/ABA*", name: "fwAba", type: "text" },
+                                        ].map((field) => (
+                                            <div key={field.name} className="flex flex-col">
+                                                <label className="text-sm font-medium mb-1" htmlFor={field.name}>{field.label}</label>
+                                                <input
+                                                    type={field.type}
+                                                    id={field.name}
+                                                    name={field.name}
+                                                    placeholder={field.placeholder || ""}
+                                                    value={formData[field.name]}
+                                                    onChange={handleInputChange}
+                                                    className="w-full bg-[#2b2d35] border border-gray-600 rounded p-2 focus:outline-none focus:border-blue-500 transition-colors"
+                                                />
+                                            </div>
+                                        ))}
+                                        </>
+                                    )}
+                                    <div className="flex flex-col">
+                                        <label className="text-sm font-medium mb-1" htmlFor="paymentTerms">Payment Terms</label>
+                                        <input
+                                            type="text"
+                                            id="paymentTerms"
+                                            name="paymentTerms"
+                                            value={formData.paymentTerms}
+                                            onChange={handleInputChange}
+                                            className="w-full bg-[#2b2d35] border border-gray-600 rounded p-2 focus:outline-none focus:border-blue-500 transition-colors"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Card 3: Supporting Documents */}
+                            <div className="bg-[#1a1c23] border border-gray-700 p-6 rounded-lg shadow-lg">
+                                <h2 className="text-xl font-semibold border-b border-gray-700 pb-3 mb-5 text-gray-100">3. Supporting Documents</h2>
+                                <div className="space-y-4">
+                                    <div className="flex flex-col">
+                                        <label className="text-sm font-medium mb-1">Supporting Evidence (Bank Letter, KvK Extract, Company Info)</label>
+                                        <input 
+                                            type="file" 
+                                            multiple 
+                                            onChange={(e) => setSupportingDocs(Array.from(e.target.files))}
+                                            className="w-full bg-[#2b2d35] border border-gray-600 rounded p-2 text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-gray-700 file:text-white hover:file:bg-gray-600 transition-colors"
+                                        />
+                                        <span className="text-xs text-gray-400 mt-1">Optional. You can select multiple files.</span>
+                                    </div>
+                                    
+                                    {formData.country === 'United States' && (
+                                        <div className="flex flex-col mt-4">
+                                            <label className="text-sm font-medium mb-1 text-red-300">Upload W-9 Form* (Required for US)</label>
+                                            <input 
+                                                type="file"
+                                                accept=".pdf,.png,.jpg,.jpeg"
+                                                onChange={(e) => setW9Form(e.target.files[0])}
+                                                className="w-full bg-[#2b2d35] border border-red-900/50 rounded p-2 text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-red-800 file:text-red-100 hover:file:bg-red-700 transition-colors"
+                                            />
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Card 4: Authorization & Consent */}
+                            <div className="bg-[#1a1c23] border border-gray-700 p-6 rounded-lg shadow-lg">
+                                <h2 className="text-xl font-semibold border-b border-gray-700 pb-3 mb-5 text-gray-100">4. Authorization & Consent</h2>
+                                
+                                <div className="flex flex-col mb-6">
+                                    <label className="text-sm font-medium mb-1" htmlFor="signatoryName">Authorised Signatory Name / Geautoriseerde ondertekenaar*</label>
+                                    <input
+                                        type="text"
+                                        id="signatoryName"
+                                        name="signatoryName"
+                                        value={formData.signatoryName}
+                                        onChange={handleInputChange}
+                                        className="bg-[#2b2d35] border border-gray-600 rounded p-2 focus:outline-none focus:border-blue-500 transition-colors"
+                                    />
+                                </div>
+
+                                <div className="flex flex-col mb-6">
+                                    <label className="text-sm font-medium mb-1">Upload Signature Image (Optional)</label>
+                                    <input 
+                                        type="file"
+                                        ref={signatureFileRef}
+                                        accept=".png, .jpg, .jpeg"
+                                        onChange={handleSignatureUpload}
+                                        className="w-full bg-[#2b2d35] border border-gray-600 rounded p-2 text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-gray-700 file:text-white hover:file:bg-gray-600 transition-colors cursor-pointer"
+                                    />
+                                    <span className="text-xs text-gray-400 mt-1">Upload an image of your signature or draw it manually below.</span>
+                                </div>
+                                
+                                <div className="flex flex-col mb-6">
+                                    <label className="text-sm font-medium mb-2">DocuSign E-Signature / Elektronische Handtekening*</label>
+                                    <div className="p-1 bg-[#2b2d35] border border-gray-600 rounded w-full max-w-md shadow-inner">
+                                        <canvas
+                                            ref={canvasRef}
+                                            width={400}
+                                            height={150}
+                                            onMouseDown={startDrawing}
+                                            onMouseMove={draw}
+                                            onMouseUp={stopDrawing}
+                                            onMouseLeave={stopDrawing}
+                                            onTouchStart={startDrawing}
+                                            onTouchMove={draw}
+                                            onTouchEnd={stopDrawing}
+                                            className="bg-gray-100 rounded cursor-crosshair w-full h-[150px] touch-none"
+                                        />
+                                    </div>
+                                    <div className="flex gap-4 items-center mt-3">
+                                        <button type="button" onClick={clearSignature} className="px-4 py-1.5 bg-gray-700 text-white rounded text-sm hover:bg-gray-600 transition-colors shadow">Clear Signature</button>
+                                        {!signaturePreview && <span className="text-gray-400 text-sm italic">Please draw your signature above.</span>}
+                                        {signaturePreview && <span className="text-green-400 text-sm font-bold flex items-center gap-1"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg> Signature Captured</span>}
+                                    </div>
+                                </div>
+
+                                <div className="flex items-start mt-8 bg-[#22242c] p-4 rounded border border-gray-600">
+                                    <div className="flex items-center h-5 mt-0.5">
+                                        <input
+                                            id="gdpr"
+                                            type="checkbox"
+                                            checked={gdprConsent}
+                                            onChange={(e) => setGdprConsent(e.target.checked)}
+                                            className="w-5 h-5 border-gray-600 rounded bg-gray-700 accent-blue-600 cursor-pointer"
+                                        />
+                                    </div>
+                                    <div className="ml-3 text-sm">
+                                        <label htmlFor="gdpr" className="font-medium text-gray-200 cursor-pointer">Data Processing Consent / GDPR*</label>
+                                        <p className="text-gray-400 mt-1">I agree to the processing of my personal and company data according to Robin Radar Systems' Privacy Policy for the purposes of supplier onboarding and financial administration.</p>
+                                    </div>
+                                </div>
+
+                                {/* Custom reCAPTCHA Replica */}
+                                <div className="mt-8 flex justify-between items-center bg-[#f9f9f9] border border-[#d3d3d3] rounded-[3px] p-3 max-w-[320px] shadow-sm ml-auto mr-auto sm:ml-0 sm:mr-auto">
+                                    <div className="flex items-center gap-4">
+                                        {captchaStatus === 'idle' && (
+                                            <div onClick={handleCaptchaClick} className="w-7 h-7 border-2 border-[#c1c1c1] bg-white rounded-[2px] cursor-pointer hover:border-[#b2b2b2] transition-colors flex-shrink-0"></div>
+                                        )}
+                                        {captchaStatus === 'loading' && (
+                                            <div className="w-7 h-7 border-4 border-[#e2e2e2] border-t-[#4a90e2] rounded-full animate-spin flex-shrink-0"></div>
+                                        )}
+                                        {captchaStatus === 'success' && (
+                                            <div className="w-7 h-7 flex items-center justify-center flex-shrink-0">
+                                                <svg className="w-8 h-8 text-[#009e5f]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
+                                            </div>
+                                        )}
+                                        <span className="text-[#282828] text-[15px] font-sans font-medium cursor-default selection:bg-transparent tracking-wide">I'm not a robot</span>
+                                    </div>
+                                    <div className="flex flex-col items-center justify-center opacity-80 pt-1">
+                                        <svg className="w-[26px] h-[26px] text-[#4a90e2] mb-1" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.53c-.26-.81-1-1.4-1.9-1.4h-1v-3c0-.55-.45-1-1-1h-6v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+                                        <span className="text-[10px] text-[#555] font-sans leading-tight">reCAPTCHA</span>
+                                        <span className="text-[9px] text-[#555] font-sans leading-tight mt-[1px]">Privacy - Terms</span>
+                                    </div>
+                                </div>
+
+                                <div className="mt-8">
+                                    <button
+                                        type="submit"
+                                        disabled={isSubmitting}
+                                        className={`w-full py-4 px-4 rounded font-bold text-white shadow-lg transition-colors text-lg ${
+                                            isSubmitting ? "bg-gray-600 cursor-not-allowed" : "bg-red-600 hover:bg-red-700"
+                                        }`}
+                                    >
+                                        {isSubmitting ? "Processing Submission..." : "Submit Supplier Form"}
+                                    </button>
+                                </div>
+                            </div>
+
+                        </form>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
