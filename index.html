@@ -210,4 +210,374 @@
 
             const handleInputChange = (e) => {
                 const { name, value } = e.target;
-                setFormData((prev
+                setFormData((prev) => ({ ...prev, [name]: value }));
+            };
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setErrorMessage(null);
+                setSuccessMessage(null);
+                setIsSubmitting(true);
+
+                const isUS = formData.country === 'United States';
+
+                if (!formData.companyName || !formData.address || !formData.zipCity || !formData.country || 
+                    !formData.phone || !formData.email || !formData.signatoryName || !signaturePreview) {
+                    setErrorMessage("Please fill in all general required fields marked with * and provide an electronic signature.");
+                    setIsSubmitting(false);
+                    return;
+                }
+
+                if (isUS) {
+                    if (!formData.tinFein || !formData.usBankName || !formData.usBankAddress || !formData.achRouting || !formData.accountNumber || !formData.usBic || !formData.fwAba) {
+                        setErrorMessage("Please fill in all required US Tax and Bank details marked with *.");
+                        setIsSubmitting(false);
+                        return;
+                    }
+                } else {
+                    if (!formData.iban || !formData.bic || !formData.swift || !formData.vatNumber || !formData.kvkNumber) {
+                        setErrorMessage("Please fill in all required EU Tax and Bank details marked with *.");
+                        setIsSubmitting(false);
+                        return;
+                    }
+                }
+
+                if (websiteError || (!isUS && (ibanError || vatError))) {
+                    setErrorMessage("Please fix the validation errors before submitting.");
+                    setIsSubmitting(false);
+                    return;
+                }
+
+                if (!gdprConsent) {
+                    setErrorMessage("You must agree to the Data Processing Consent (GDPR) policy to submit.");
+                    setIsSubmitting(false);
+                    return;
+                }
+
+                if (captchaStatus !== 'success') {
+                    setErrorMessage("Please verify that you are not a robot before submitting.");
+                    setIsSubmitting(false);
+                    return;
+                }
+
+                try {
+                    const response = await fetch('/.netlify/functions/submit-onboarding', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            formData,
+                            signatureBase64: signaturePreview
+                        })
+                    });
+
+                    const result = await response.json();
+
+                    if (response.ok) {
+                        setSuccessMessage("Onboarding submitted successfully! The signed agreement has been sent to Finance.");
+                        setFormData({
+                            companyName: '', address: '', zipCity: '', country: 'Netherlands', phone: '', email: '', website: '',
+                            vatNumber: '', kvkNumber: '', iban: '', bic: '', swift: '', paymentTerms: '30 days standard',
+                            signatoryName: '', tinFein: '', usBankName: '', usBankAddress: '', achRouting: '', accountNumber: '', usBic: '', fwAba: ''
+                        });
+                        clearSignature();
+                        setGdprConsent(false);
+                        setCaptchaStatus('idle');
+                    } else {
+                        setErrorMessage(`Submission error: ${result.error || 'Server error occurred'}`);
+                    }
+                } catch (err) {
+                    setErrorMessage("Network error: Could not reach the Netlify backend function.");
+                } finally {
+                    setIsSubmitting(false);
+                }
+            };
+
+            return (
+                <div className="min-h-screen p-8">
+                    <div className="max-w-3xl mx-auto">
+                        <h1 className="text-4xl font-bold mb-2">Robin Radar Systems - Supplier Onboarding</h1>
+                        <p className="text-gray-300 mb-6">Please fill out all fields below to register as a creditor or supplier.</p>
+
+                        {errorMessage && (
+                            <div className="bg-red-900 border border-red-500 text-red-100 p-4 rounded mb-6">
+                                {errorMessage}
+                            </div>
+                        )}
+
+                        {successMessage && (
+                            <div className="bg-green-900 border border-green-500 text-green-100 p-4 rounded mb-6">
+                                {successMessage}
+                            </div>
+                        )}
+
+                        <form onSubmit={handleSubmit} className="space-y-8">
+                            
+                            {/* Card 1: Company Information */}
+                            <div className="bg-[#1a1c23] border border-gray-700 p-6 rounded-lg shadow-lg">
+                                <h2 className="text-xl font-semibold border-b border-gray-700 pb-3 mb-5 text-gray-100">1. Company Information</h2>
+                                <div className="space-y-4">
+                                    {[
+                                        { label: "Company Name / Bedrijfsnaam*", name: "companyName", type: "text" },
+                                        { label: "Address / Adres*", name: "address", type: "text" },
+                                        { label: "Zip Code and City / Postcode en Plaats*", name: "zipCity", type: "text" },
+                                    ].map((field) => (
+                                        <div key={field.name} className="flex flex-col">
+                                            <label className="text-sm font-medium mb-1" htmlFor={field.name}>{field.label}</label>
+                                            <input
+                                                type={field.type}
+                                                id={field.name}
+                                                name={field.name}
+                                                value={formData[field.name]}
+                                                onChange={handleInputChange}
+                                                className="w-full bg-[#2b2d35] border border-gray-600 rounded p-2 focus:outline-none focus:border-blue-500 transition-colors"
+                                            />
+                                        </div>
+                                    ))}
+
+                                    <div className="flex flex-col relative" ref={countryRef}>
+                                        <label className="text-sm font-medium mb-1" htmlFor="country">Country / Land*</label>
+                                        <input
+                                            type="text"
+                                            id="country"
+                                            name="country"
+                                            value={formData.country}
+                                            onChange={(e) => {
+                                                handleInputChange(e);
+                                                setShowCountryDropdown(true);
+                                            }}
+                                            onFocus={() => setShowCountryDropdown(true)}
+                                            autoComplete="off"
+                                            placeholder="Type to search..."
+                                            className="w-full bg-[#2b2d35] border border-gray-600 rounded p-2 focus:outline-none focus:border-blue-500 transition-colors"
+                                        />
+                                        {showCountryDropdown && (
+                                            <ul className="absolute z-10 top-full mt-1 left-0 right-0 bg-[#2b2d35] border border-gray-500 rounded max-h-60 overflow-y-auto shadow-xl">
+                                                {countriesList.filter(c => c.toLowerCase().includes(formData.country.toLowerCase())).length > 0 ? (
+                                                    countriesList.filter(c => c.toLowerCase().includes(formData.country.toLowerCase())).map(country => (
+                                                        <li
+                                                            key={country}
+                                                            className="p-3 hover:bg-blue-600 border-b border-gray-700 cursor-pointer text-sm transition-colors last:border-b-0"
+                                                            onMouseDown={(e) => {
+                                                                e.preventDefault();
+                                                                setFormData(prev => ({ ...prev, country: country }));
+                                                                setShowCountryDropdown(false);
+                                                            }}
+                                                        >
+                                                            {country}
+                                                        </li>
+                                                    ))
+                                                ) : (
+                                                    <li className="p-3 text-gray-500 text-sm">No countries found...</li>
+                                                )}
+                                            </ul>
+                                        )}
+                                    </div>
+
+                                    {[
+                                        { label: "Telephone Number / Telefoonnummer*", name: "phone", type: "tel" },
+                                        { label: "Finance E-mail Address / E-mailadres*", name: "email", type: "email" },
+                                        { label: "Website URL", name: "website", type: "text", error: websiteError, valid: isWebsiteValid },
+                                    ].map((field) => (
+                                        <div key={field.name} className="flex flex-col">
+                                            <label className="text-sm font-medium mb-1" htmlFor={field.name}>{field.label}</label>
+                                            <div className="relative">
+                                                <input
+                                                    type={field.type}
+                                                    id={field.name}
+                                                    name={field.name}
+                                                    value={formData[field.name]}
+                                                    onChange={handleInputChange}
+                                                    onBlur={handleBlur}
+                                                    className={`w-full bg-[#2b2d35] border rounded p-2 ${field.valid ? 'pr-10' : ''} focus:outline-none transition-colors ${field.error ? 'border-red-500 focus:border-red-500' : 'border-gray-600 focus:border-blue-500'}`}
+                                                />
+                                                {field.valid && (
+                                                    <svg className="w-5 h-5 text-green-500 absolute right-3 top-[10px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
+                                                )}
+                                            </div>
+                                            {field.error && <span className="text-red-400 text-xs mt-1">{field.error}</span>}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Card 2: Bank & Tax Details */}
+                            <div className="bg-[#1a1c23] border border-gray-700 p-6 rounded-lg shadow-lg">
+                                <h2 className="text-xl font-semibold border-b border-gray-700 pb-3 mb-5 text-gray-100">2. Tax & Bank Details</h2>
+                                <div className="space-y-4">
+                                    {formData.country !== 'United States' ? (
+                                        <>
+                                        {[
+                                            { label: "VAT Number / BTW-nummer (EU only)*", name: "vatNumber", type: "text", error: vatError, valid: isVatValid },
+                                            { label: "Business Registration / KVK-nummer (EU only)*", name: "kvkNumber", type: "text" },
+                                            { label: "IBAN*", name: "iban", type: "text", error: ibanError, valid: isIbanValid },
+                                            { label: "BIC*", name: "bic", type: "text" },
+                                            { label: "SWIFT*", name: "swift", type: "text" },
+                                        ].map((field) => (
+                                            <div key={field.name} className="flex flex-col">
+                                                <label className="text-sm font-medium mb-1" htmlFor={field.name}>{field.label}</label>
+                                                <div className="relative">
+                                                    <input
+                                                        type={field.type}
+                                                        id={field.name}
+                                                        name={field.name}
+                                                        value={formData[field.name]}
+                                                        onChange={handleInputChange}
+                                                        onBlur={handleBlur}
+                                                        className={`w-full bg-[#2b2d35] border rounded p-2 ${field.valid ? 'pr-10' : ''} focus:outline-none transition-colors ${field.error ? 'border-red-500 focus:border-red-500' : 'border-gray-600 focus:border-blue-500'}`}
+                                                    />
+                                                    {field.valid && (
+                                                        <svg className="w-5 h-5 text-green-500 absolute right-3 top-[10px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
+                                                    )}
+                                                </div>
+                                                {field.error && <span className="text-red-400 text-xs mt-1">{field.error}</span>}
+                                            </div>
+                                        ))}
+                                        </>
+                                    ) : (
+                                        <>
+                                        {[
+                                            { label: "Company TIN / FEIN (Taxpayer Identification Number)*", name: "tinFein", type: "text", placeholder: "Ex. 37-2142119" },
+                                            { label: "Bank name*", name: "usBankName", type: "text" },
+                                            { label: "Bank Address*", name: "usBankAddress", type: "text" },
+                                            { label: "ACH routing #*", name: "achRouting", type: "text" },
+                                            { label: "Account #*", name: "accountNumber", type: "text" },
+                                            { label: "BIC*", name: "usBic", type: "text" },
+                                            { label: "FW/ABA*", name: "fwAba", type: "text" },
+                                        ].map((field) => (
+                                            <div key={field.name} className="flex flex-col">
+                                                <label className="text-sm font-medium mb-1" htmlFor={field.name}>{field.label}</label>
+                                                <input
+                                                    type={field.type}
+                                                    id={field.name}
+                                                    name={field.name}
+                                                    placeholder={field.placeholder || ""}
+                                                    value={formData[field.name]}
+                                                    onChange={handleInputChange}
+                                                    className="w-full bg-[#2b2d35] border border-gray-600 rounded p-2 focus:outline-none focus:border-blue-500 transition-colors"
+                                                />
+                                            </div>
+                                        ))}
+                                        </>
+                                    )}
+                                    <div className="flex flex-col">
+                                        <label className="text-sm font-medium mb-1" htmlFor="paymentTerms">Payment Terms</label>
+                                        <input
+                                            type="text"
+                                            id="paymentTerms"
+                                            name="paymentTerms"
+                                            value={formData.paymentTerms}
+                                            onChange={handleInputChange}
+                                            className="w-full bg-[#2b2d35] border border-gray-600 rounded p-2 focus:outline-none focus:border-blue-500 transition-colors"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Card 3: Authorization & Consent */}
+                            <div className="bg-[#1a1c23] border border-gray-700 p-6 rounded-lg shadow-lg">
+                                <h2 className="text-xl font-semibold border-b border-gray-700 pb-3 mb-5 text-gray-100">3. Authorization & Consent</h2>
+                                
+                                <div className="flex flex-col mb-6">
+                                    <label className="text-sm font-medium mb-1" htmlFor="signatoryName">Authorised Signatory Name / Geautoriseerde ondertekenaar*</label>
+                                    <input
+                                        type="text"
+                                        id="signatoryName"
+                                        name="signatoryName"
+                                        value={formData['signatoryName']}
+                                        onChange={handleInputChange}
+                                        className="bg-[#2b2d35] border border-gray-600 rounded p-2 focus:outline-none focus:border-blue-500 transition-colors"
+                                    />
+                                </div>
+
+                                <div className="flex flex-col mb-6">
+                                    <label className="text-sm font-medium mb-1">Upload Signature Image (Optional)</label>
+                                    <input 
+                                        type="file"
+                                        ref={signatureFileRef}
+                                        accept=".png, .jpg, .jpeg"
+                                        onChange={handleSignatureUpload}
+                                        className="w-full bg-[#2b2d35] border border-gray-600 rounded p-2 text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-gray-700 file:text-white hover:file:bg-gray-600 transition-colors cursor-pointer"
+                                    />
+                                </div>
+                                
+                                <div className="flex flex-col mb-6">
+                                    <label className="text-sm font-medium mb-2">Electronic Signature / Handtekening*</label>
+                                    <div className="p-1 bg-[#2b2d35] border border-gray-600 rounded w-full max-w-md shadow-inner">
+                                        <canvas
+                                            ref={canvasRef}
+                                            width={400}
+                                            height={150}
+                                            onMouseDown={startDrawing}
+                                            onMouseMove={draw}
+                                            onMouseUp={stopDrawing}
+                                            onMouseLeave={stopDrawing}
+                                            onTouchStart={startDrawing}
+                                            onTouchMove={draw}
+                                            onTouchEnd={stopDrawing}
+                                            className="bg-gray-100 rounded cursor-crosshair w-full h-[150px] touch-none"
+                                        />
+                                    </div>
+                                    <div className="flex gap-4 items-center mt-3">
+                                        <button type="button" onClick={clearSignature} className="px-4 py-1.5 bg-gray-700 text-white rounded text-sm hover:bg-gray-600 transition-colors shadow">Clear</button>
+                                        {!signaturePreview && <span className="text-gray-400 text-sm italic">Draw your signature above.</span>}
+                                        {signaturePreview && <span className="text-green-400 text-sm font-bold flex items-center gap-1"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg> Captured</span>}
+                                    </div>
+                                </div>
+
+                                <div className="flex items-start mt-8 bg-[#22242c] p-4 rounded border border-gray-600">
+                                    <div className="flex items-center h-5 mt-0.5">
+                                        <input
+                                            id="gdpr"
+                                            type="checkbox"
+                                            checked={gdprConsent}
+                                            onChange={(e) => setGdprConsent(e.target.checked)}
+                                            className="w-5 h-5 border-gray-600 rounded bg-gray-700 accent-blue-600 cursor-pointer"
+                                        />
+                                    </div>
+                                    <div className="ml-3 text-sm">
+                                        <label htmlFor="gdpr" className="font-medium text-gray-200 cursor-pointer">Data Processing Consent / GDPR*</label>
+                                        <p className="text-gray-400 mt-1">I agree to the processing of company data for supplier onboarding.</p>
+                                    </div>
+                                </div>
+
+                                <div className="mt-8 flex justify-between items-center bg-[#f9f9f9] border border-[#d3d3d3] rounded-[3px] p-3 max-w-[320px] shadow-sm">
+                                    <div className="flex items-center gap-4">
+                                        {captchaStatus === 'idle' && (
+                                            <div onClick={handleCaptchaClick} className="w-7 h-7 border-2 border-[#c1c1c1] bg-white rounded-[2px] cursor-pointer hover:border-[#b2b2b2] transition-colors flex-shrink-0"></div>
+                                        )}
+                                        {captchaStatus === 'loading' && (
+                                            <div className="w-7 h-7 border-4 border-[#e2e2e2] border-t-[#4a90e2] rounded-full animate-spin flex-shrink-0"></div>
+                                        )}
+                                        {captchaStatus === 'success' && (
+                                            <div className="w-7 h-7 flex items-center justify-center flex-shrink-0">
+                                                <svg className="w-8 h-8 text-[#009e5f]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
+                                            </div>
+                                        )}
+                                        <span className="text-[#282828] text-[15px] font-sans font-medium cursor-default">I'm not a robot</span>
+                                    </div>
+                                </div>
+
+                                <div className="mt-8">
+                                    <button
+                                        type="submit"
+                                        disabled={isSubmitting}
+                                        className={`w-full py-4 px-4 rounded font-bold text-white shadow-lg transition-colors text-lg ${
+                                            isSubmitting ? "bg-gray-600 cursor-not-allowed" : "bg-red-600 hover:bg-red-700"
+                                        }`}
+                                    >
+                                        {isSubmitting ? "Submitting..." : "Submit Supplier Form"}
+                                    </button>
+                                </div>
+                            </div>
+
+                        </form>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
