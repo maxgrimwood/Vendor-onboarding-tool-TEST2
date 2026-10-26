@@ -15,7 +15,31 @@ const handler = async (event) => {
         const body = JSON.parse(event.body || '{}');
         const formData = body.formData || {};
         const signatureBase64 = body.signatureBase64;
+        if (formData.country !== 'United States' && formData.vatNumber) {
+            const cleanVat = formData.vatNumber.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+            const countryCode = cleanVat.slice(0, 2);
+            const vatNum = cleanVat.slice(2);
 
+            if (cleanVat.length >= 4) {
+                try {
+                    const viesResponse = await fetch(`https://ec.europa.eu/taxation_customs/vies/rest-api/ms/${countryCode}/vat/${vatNum}`);
+                    if (viesResponse.ok) {
+                        const viesData = await viesResponse.json();
+                        if (viesData.isValid === false) {
+                            return {
+                                statusCode: 400,
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ error: `VAT number '${formData.vatNumber}' is inactive or invalid according to the EU VIES registry.` })
+                            };
+                        }
+                    }
+                } catch (viesErr) {
+                    // If EU VIES API is unreachable/down, log warning and allow submission
+                    console.warn('VIES service check skipped due to error:', viesErr.message);
+                }
+            }
+        }
+        // -------------------------
         // 1. Create PDF
         const pdfDoc = await PDFDocument.create();
         const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
