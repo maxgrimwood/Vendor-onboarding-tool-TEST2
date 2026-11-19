@@ -12,6 +12,35 @@
 
     <style>
         canvas { touch-action: none; }
+        body {
+            background-color: #060a07;
+            background-image: url('/assets/radar-background.jpeg');
+            background-position: center;
+            background-size: cover;
+            background-repeat: no-repeat;
+            background-attachment: fixed;
+        }
+        .brand-lockup {
+            --brand-height: clamp(80px, 20vw, 128px);
+            display: flex;
+            align-items: center;
+            gap: clamp(16px, 4vw, 32px);
+            margin-bottom: 28px;
+        }
+        .brand-logo {
+            margin-left: auto;
+            width: auto;
+            height: var(--brand-height);
+            flex-shrink: 0;
+            mix-blend-mode: screen;
+        }
+        .brand-wordmark {
+            display: block;
+            width: auto;
+            height: var(--brand-height);
+            flex-shrink: 0;
+            mix-blend-mode: screen;
+        }
     </style>
 </head>
 <body class="bg-[#0e1117] text-white font-sans antialiased">
@@ -330,9 +359,15 @@
             };
 
             return (
-                <div className="min-h-screen p-8">
+                <div className="min-h-screen px-4 py-8 sm:p-8">
                     <div className="max-w-3xl mx-auto">
-                        <h1 className="text-4xl font-bold mb-2">Robin Radar Systems - Supplier Onboarding</h1>
+                        <header>
+                            <div className="brand-lockup">
+                                <img src="/assets/robin-wordmark.png" alt="Robin Radar Systems" className="brand-wordmark" width="1504" height="774" />
+                                <img src="/assets/robin-logo.jpeg" alt="" className="brand-logo" width="200" height="200" />
+                            </div>
+                            <h1 className="text-3xl sm:text-4xl font-bold mb-2">Supplier onboarding</h1>
+                        </header>
                         <p className="text-gray-300 mb-6">Please fill out all fields below to register as a creditor or supplier.</p>
 
                         <form noValidate onSubmit={handleSubmit} className="space-y-8">
