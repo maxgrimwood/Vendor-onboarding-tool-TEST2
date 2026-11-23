@@ -338,7 +338,7 @@
                     const result = await response.json();
 
                     if (response.ok) {
-                        setSuccessMessage("Onboarding submitted successfully! The signed agreement has been sent to Finance.");
+                        setSuccessMessage("Onboarding submitted successfully! The email to Finance includes your signed PDF.");
                         setFormData({
                             companyName: '', address: '', zipCity: '', country: 'Netherlands', phone: '', email: '', website: '',
                             vatNumber: '', kvkNumber: '', iban: '', bic: '', swift: '', paymentTerms: '30 days standard',
