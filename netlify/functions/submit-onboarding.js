@@ -116,14 +116,12 @@ const handler = async (event) => {
             });
         }
 
-        // Save PDF to buffer
-        const pdfBytes = await pdfDoc.save();
-        const pdfBuffer = Buffer.from(pdfBytes);
+        const pdfBase64 = await pdfDoc.saveAsBase64();
 
         // 2. Send email via Resend
         const safeCompanyName = (formData.companyName || 'Supplier').replace(/[^a-zA-Z0-9_-]/g, '_');
         
-        await resend.emails.send({
+        const { data, error } = await resend.emails.send({
             from: 'onboarding@resend.dev',
             to: ['max.grimwood@robinradar.com'],
             subject: `New Supplier Form: ${formData.companyName || 'Vendor Submission'}`,
@@ -131,10 +129,20 @@ const handler = async (event) => {
             attachments: [
                 {
                     filename: `Supplier_${safeCompanyName}.pdf`,
-                    content: pdfBuffer
+                    content: pdfBase64,
+                    content_type: 'application/pdf'
                 }
             ]
         });
+
+        if (error || !data?.id) {
+            console.error('Resend did not accept the onboarding email with its PDF attachment.');
+            return {
+                statusCode: 502,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ error: 'Could not email the signed PDF to Finance. Please try again.' })
+            };
+        }
 
         return {
             statusCode: 200,
